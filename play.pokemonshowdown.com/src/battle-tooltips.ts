@@ -15,7 +15,7 @@ import { BattleLog } from "./battle-log";
 import { Move, BattleNatures } from "./battle-dex-data";
 import { BattleTextParser } from "./battle-text-parser";
 
-class ModifiableValue {
+export class ModifiableValue {
 	value = 0;
 	maxValue = 0;
 	comment: string[];
@@ -156,7 +156,8 @@ export class BattleTooltips {
 	// tooltips
 	// Touch delay, pressing finger more than that time will cause the tooltip to open.
 	// Shorter time will cause the button to click
-	static LONG_TAP_DELAY = 350; // ms
+	static LONG_TAP_DELAY = 500; // ms
+	static LONG_CLICK_DELAY = 700; // ms
 	static longTapTimeout = 0;
 	static elem: HTMLDivElement | null = null;
 	static parentElem: HTMLElement | null = null;
@@ -164,13 +165,13 @@ export class BattleTooltips {
 	static isPressed = false;
 
 	static hideTooltip() {
-		if (!BattleTooltips.elem) return;
 		BattleTooltips.cancelLongTap();
+		if (!BattleTooltips.elem) return;
 		BattleTooltips.elem.parentNode!.removeChild(BattleTooltips.elem);
 		BattleTooltips.elem = null;
 		BattleTooltips.parentElem = null;
 		BattleTooltips.isLocked = false;
-		$('#tooltipwrapper').removeClass('tooltip-locked');
+		$('#tooltipwrapper').removeClass('tooltip-locked tooltip-locking-click tooltip-locking-tap');
 	}
 
 	static cancelLongTap() {
@@ -178,6 +179,7 @@ export class BattleTooltips {
 			clearTimeout(BattleTooltips.longTapTimeout);
 			BattleTooltips.longTapTimeout = 0;
 		}
+		$('#tooltipwrapper').removeClass('tooltip-locking-click tooltip-locking-tap');
 	}
 
 	lockTooltip() {
@@ -187,6 +189,7 @@ export class BattleTooltips {
 				$(BattleTooltips.parentElem!).removeClass('pressed');
 				BattleTooltips.isPressed = false;
 			}
+			// $('#tooltipwrapper').removeClass('tooltip-locking');
 			$('#tooltipwrapper').addClass('tooltip-locked');
 		}
 	}
@@ -243,12 +246,17 @@ export class BattleTooltips {
 		if (BattleTooltips.isLocked) BattleTooltips.hideTooltip();
 		const target = e.currentTarget as HTMLElement;
 		this.showTooltip(target);
-		let factor = (e.type === 'mousedown' && target.tagName === 'BUTTON' ? 2 : 1);
+		const isClick = (e.type === 'mousedown' && target.tagName === 'BUTTON');
 
 		BattleTooltips.longTapTimeout = setTimeout(() => {
 			BattleTooltips.longTapTimeout = 0;
 			this.lockTooltip();
-		}, BattleTooltips.LONG_TAP_DELAY * factor);
+		}, isClick ? BattleTooltips.LONG_CLICK_DELAY : BattleTooltips.LONG_TAP_DELAY);
+		if (isClick) {
+			$('#tooltipwrapper').addClass('tooltip-locking-click');
+		} else {
+			$('#tooltipwrapper').addClass('tooltip-locking-tap');
+		}
 	};
 
 	showTooltipEvent = (e: Event) => {
@@ -419,7 +427,7 @@ export class BattleTooltips {
 			$wrapper.removeClass('tooltip-locked');
 		}
 		$wrapper.css({
-			left: x,
+			left: Math.min(x, document.documentElement.clientWidth - 400),
 			top: y,
 		});
 		innerHTML = `<div class="tooltipinner"><div class="tooltip tooltip-${type!}">${innerHTML}</div></div>`;
@@ -448,8 +456,11 @@ export class BattleTooltips {
 		}
 
 		let width = $(BattleTooltips.elem).outerWidth()!;
-		if (x > document.documentElement.clientWidth - width - 2) {
-			x = document.documentElement.clientWidth - width - 2;
+		const availableWidth = document.documentElement.clientWidth + window.scrollX;
+		if (x > availableWidth - width - 2) {
+			x = availableWidth - width - 2;
+			$wrapper.css('left', x);
+		} else if (x > document.documentElement.clientWidth - 400) {
 			$wrapper.css('left', x);
 		}
 
@@ -771,6 +782,29 @@ export class BattleTooltips {
 			if (move.flags.wind) {
 				text += `<p class="movetag">&#x2713; Wind <small>(activates Wind Power and Wind Rider)</small></p>`;
 			}
+			// RBY healing move glitch
+			if (this.battle.gen === 1 && !toID(this.battle.tier).includes('stadium') &&
+				['recover', 'softboiled', 'rest'].includes(move.id)) {
+				const hpValues = [];
+				// glitches at HP values equal to `maxHP + 1 % 256` unless they are `0 % 256`
+				const hp = serverPokemon.maxhp - 255;
+				if (hp > 0 && hp % 256 !== 0) {
+					hpValues.push(hp);
+					if (hp - 256 > 0) {
+						hpValues.push(hp - 256);
+					}
+				}
+				let failMessage = hpValues.length ? `Fails if current HP is ${hpValues.join(' or ')}.` : '';
+				if (hpValues.includes(serverPokemon.hp)) failMessage = `<strong class="message-error">${failMessage}</strong>`;
+				if (failMessage) text += `<p>${failMessage}</p>`;
+			}
+			if (this.battle.gen === 1 && !toID(this.battle.tier).includes('stadium') &&
+				move.id === 'substitute') {
+				const selfKO = serverPokemon.maxhp % 4 === 0 ? serverPokemon.maxhp / 4 : null;
+				let failMessage = selfKO ? `KOs yourself if current HP is exactly ${selfKO}.` : '';
+				if (selfKO === serverPokemon.hp) failMessage = `<strong class="message-error">${failMessage}</strong>`;
+				if (failMessage) text += `<p>${failMessage}</p>`;
+			}
 		}
 		return text;
 	}
@@ -784,10 +818,6 @@ export class BattleTooltips {
 	 *
 	 * isActive is true if hovering over a pokemon in the battlefield,
 	 * and false if hovering over a pokemon in the Switch menu.
-	 *
-	 * @param clientPokemon
-	 * @param serverPokemon
-	 * @param isActive
 	 */
 	showPokemonTooltip(
 		clientPokemon: Pokemon | null, serverPokemon?: ServerPokemon | null, isActive?: boolean, illusionIndex?: number
@@ -1280,7 +1310,10 @@ export class BattleTooltips {
 				stats.spd = Math.floor(stats.spd * 1.5);
 			}
 			if (weather === 'deserteddunes' && this.pokemonHasType(pokemon, 'Rock')) {
-				stats.spd = Math.floor(stats.spd * 1.5);
+				stats.spd = Math.floor(stats.spd * 1.25);
+			}
+			if (weather === 'stormsurge' && ability === 'swiftswim') {
+				speedModifiers.push(2);
 			}
 			if (pokemon.status && ability === 'fortifiedmetal') {
 				stats.atk = Math.floor(stats.atk * 1.5);
@@ -1307,6 +1340,10 @@ export class BattleTooltips {
 			}
 			if (ability === 'soulsurfer' && this.battle.hasPseudoWeather('Electric Terrain')) {
 				speedModifiers.push(2);
+			}
+			if (ability === 'orchardsgift' && this.battle.hasPseudoWeather('Grassy Terrain')) {
+				stats.spa = Math.floor(stats.spa * 1.5);
+				stats.spd = Math.floor(stats.spd * 1.5);
 			}
 			if (item === 'eviolite' && this.battle.dex.species.get(serverPokemon.speciesForme).id === 'pichuspikyeared') {
 				stats.def = Math.floor(stats.def * 1.5);
@@ -1677,7 +1714,7 @@ export class BattleTooltips {
 				moveType = 'Stellar';
 			}
 			if (move.id === 'weatherball' && value.weatherModify(0)) {
-				if (this.battle.weather === 'stormsurge') moveType = 'Water';
+				if (this.battle.weather === 'stormsurge' && item.id !== 'utilityumbrella') moveType = 'Water';
 				if (this.battle.weather === 'deserteddunes') moveType = 'Rock';
 			}
 			if (move.id === 'o' || move.id === 'worriednoises') {
@@ -2300,6 +2337,12 @@ export class BattleTooltips {
 			let timeDilationBPMod = 1 + (0.1 * Math.floor(this.battle.turn / 10));
 			if (timeDilationBPMod > 2) timeDilationBPMod = 2;
 			value.abilityModify(timeDilationBPMod, "Time Dilation");
+
+			for (let i = 1; i <= 5 && i <= pokemon.side.faintCounter; i++) {
+				if (pokemon.volatiles[`fallen${i}`]) {
+					value.abilityModify(1 + 0.05 * i, "The Eminence in the Shadow");
+				}
+			}
 		}
 
 		return value;
@@ -2512,7 +2555,7 @@ export class BattleTooltips {
 	}
 }
 
-class BattleStatGuesser {
+export class BattleStatGuesser {
 	formatid: ID;
 	dex: ModdedDex;
 	moveCount: any = null;
@@ -2541,8 +2584,8 @@ class BattleStatGuesser {
 		for (let stat in evs) {
 			evs[stat as Dex.StatName] = comboEVs[stat as Dex.StatName] || 0;
 		}
-		let plusStat = comboEVs.plusStat || '';
-		let minusStat = comboEVs.minusStat || '';
+		let plusStat = comboEVs.plusStat || '' as const;
+		let minusStat = comboEVs.minusStat || '' as const;
 		return { role, evs, plusStat, minusStat, moveCount: this.moveCount, hasMove: this.hasMove };
 	}
 	guessRole(set: Dex.PokemonSet) {
@@ -2857,7 +2900,7 @@ class BattleStatGuesser {
 	}
 	guessEVs(
 		set: Dex.PokemonSet, role: string
-	): Partial<Dex.StatsTable> & { plusStat?: Dex.StatName | '', minusStat?: Dex.StatName | '' } {
+	): Partial<Dex.StatsTable> & { plusStat?: Dex.StatNameExceptHP, minusStat?: Dex.StatNameExceptHP } {
 		if (!set) return {};
 		if (role === '?') return {};
 		let species = this.dex.species.get(set.species || set.name!);
@@ -2866,13 +2909,13 @@ class BattleStatGuesser {
 		let hasMove = this.hasMove;
 		let moveCount = this.moveCount;
 
-		let evs: Dex.StatsTable & { plusStat?: Dex.StatName | '', minusStat?: Dex.StatName | '' } = {
+		let evs: Dex.StatsTable & { plusStat?: Dex.StatNameExceptHP, minusStat?: Dex.StatNameExceptHP } = {
 			hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0,
 		};
-		let plusStat: Dex.StatName | '' = '';
-		let minusStat: Dex.StatName | '' = '';
+		let plusStat: Dex.StatNameExceptHP;
+		let minusStat: Dex.StatNameExceptHP | undefined = undefined;
 
-		let statChart: { [role: string]: [Dex.StatName, Dex.StatName] } = {
+		let statChart: { [role: string]: [Dex.StatNameExceptHP, Dex.StatName] } = {
 			'Bulky Band': ['atk', 'hp'],
 			'Fast Band': ['spe', 'atk'],
 			'Bulky Specs': ['spa', 'hp'],
@@ -3066,7 +3109,7 @@ class BattleStatGuesser {
 			minusStat = 'def';
 		}
 
-		if (plusStat === minusStat) {
+		if (!minusStat || plusStat === minusStat) {
 			minusStat = (plusStat === 'spe' ? 'spd' : 'spe');
 		}
 
@@ -3116,7 +3159,7 @@ class BattleStatGuesser {
 	}
 }
 
-function BattleStatOptimizer(set: Dex.PokemonSet, formatid: ID) {
+export function BattleStatOptimizer(set: Dex.PokemonSet, formatid: ID) {
 	if (!set.evs) return null;
 
 	const dex = Dex.mod(formatid.slice(0, 4) as ID);
@@ -3126,7 +3169,7 @@ function BattleStatOptimizer(set: Dex.PokemonSet, formatid: ID) {
 		formatid.includes('metronomebattle') || formatid.endsWith('norestrictions')
 	);
 	const supportsEVs = !formatid.includes('letsgo');
-	if (!supportsEVs || ignoreEVLimits) return false;
+	if (!supportsEVs || ignoreEVLimits) return null;
 
 	const species = dex.species.get(set.species);
 	const level = set.level || 100;
