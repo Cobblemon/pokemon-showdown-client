@@ -13,9 +13,6 @@ function renderNews() {
 	global $latestNewsCache, $newsCache;
 	$buf = '';
 	$count = 0;
-	if (!is_array($latestNewsCache)) {
-		return false;
-	}
 	foreach ($latestNewsCache as $topic_id) {
 		$topic = $newsCache[$topic_id];
 		$buf .= '<div class="newsentry" data-newsid="'.$topic_id.'" data-date="'.$topic['date'].'">';
@@ -30,9 +27,6 @@ function renderNews() {
 
 function getNewsId() {
 	global $latestNewsCache, $newsCache;
-	if (!is_array($latestNewsCache)) {
-		return false;
-	}
 	foreach ($latestNewsCache as $topic_id) {
 		return $topic_id;
 	}

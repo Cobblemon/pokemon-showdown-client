@@ -6,7 +6,7 @@ export default configure([
 	{
 		ignores: [
 			'caches/**',
-			'play.pokemonshowdown.com/config/config-test.js',
+			'play.pokemonshowdown.com/config/*',
 			'play.pokemonshowdown.com/src/battle-log-misc.js',
 			'play.pokemonshowdown.com/js/replay-embed.js',
 		],
@@ -105,6 +105,8 @@ export default configure([
 			'play.pokemonshowdown.com/src/*.tsx',
 			'replay.pokemonshowdown.com/src/*.ts',
 			'replay.pokemonshowdown.com/src/*.tsx',
+			'teams.pokemonshowdown.com/src/*.ts',
+			'teams.pokemonshowdown.com/src/*.tsx',
 		],
 		extends: [configs.es3ts],
 		languageOptions: {

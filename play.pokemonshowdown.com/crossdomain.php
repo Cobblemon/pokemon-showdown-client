@@ -98,6 +98,7 @@ header('P3P: CP="NOI CUR ADM DEV COM NAV STA OUR IND"');
 <!DOCTYPE html>
 <meta charset="utf-8" />
 <script src="/js/lib/jquery-2.2.4.min.js"></script>
+<script nomodule src="/js/lib/ps-polyfill.js"></script>
 <body>
 <script>
 
@@ -113,6 +114,7 @@ function postReply (message) {
 function messageHandler(e) {
 	if (e.origin !== yourOrigin) return;
 	var data = e.data;
+	// console.log('recv: ' + data);
 
 	// data's first char:
 	// T: store teams
@@ -147,6 +149,12 @@ function messageHandler(e) {
 	}
 }
 
+// Things we send:
+// c[config]
+// p[prefs]
+// t[teams]
+// a[1 = localStorage success, 0 = localstorage failed] (guaranteed to be last)
+
 window.addEventListener('message', messageHandler);
 if (configHost !== 'showdown') postReply('c' + config);
 var storageAvailable = false;
@@ -154,9 +162,9 @@ try {
 	var testVal = '' + Date.now();
 	localStorage.setItem('showdown_allow3p', testVal);
 	if (localStorage.getItem('showdown_allow3p') === testVal) {
-		postReply('a1');
 		postReply('p' + localStorage.getItem('showdown_prefs'));
 		postReply('t' + localStorage.getItem('showdown_teams'));
+		postReply('a1');
 		storageAvailable = true;
 	}
 } catch (err) {}
